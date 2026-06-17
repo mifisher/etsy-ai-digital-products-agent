@@ -200,7 +200,7 @@ def _llm_generate_package(product_input: ProductInput) -> dict:
     }
 
 
-def build_package(product_input: ProductInput) -> dict:
+def build_package(product_input: ProductInput, competitor_insights: dict | None = None) -> dict:
     if os.getenv("ETSY_USE_LLM", "").lower() in ("1", "true", "yes"):
         return _llm_generate_package(product_input)
 
@@ -214,41 +214,62 @@ def build_package(product_input: ProductInput) -> dict:
         product_input.product_niche, product_input.product_format
     )
 
+    if competitor_insights:
+        from etsy_agent.research import suggest_title, suggest_tags, suggest_price
+        title = suggest_title(
+            product_input.product_niche, product_input.product_format, product_input.tone, competitor_insights
+        )
+        tags = suggest_tags(product_input.product_niche, product_input.product_format, competitor_insights)
+        price = suggest_price(competitor_insights)
+        notes = [
+            "This output is draft-only and requires manual review before listing publication.",
+            "Titles, tags, and price informed by competitor research.",
+        ]
+    else:
+        title = _generate_title(
+            product_input.product_niche, product_input.product_format, product_input.tone
+        )
+        tags = _generate_tags(
+            product_input.product_niche, product_input.product_format, product_input.tone
+        )
+        price = 19
+        notes = [
+            "This output is draft-only and requires manual review before listing publication.",
+            "Set ETSY_USE_LLM=1 to enable LLM-backed generation.",
+        ]
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "input": asdict(product_input),
         "product_brief": brief,
         "listing": {
-            "title": _generate_title(
-                product_input.product_niche, product_input.product_format, product_input.tone
-            ),
-            "price_recommendation_usd": 19,
-            "tags": _generate_tags(
-                product_input.product_niche, product_input.product_format, product_input.tone
-            ),
+            "title": title,
+            "price_recommendation_usd": price,
+            "tags": tags,
             "description": _generate_description(product_input),
         },
         "deliverables": deliverables,
-        "github_demo_notes": [
-            "This output is draft-only and requires manual review before listing publication.",
-            "Set ETSY_USE_LLM=1 to enable LLM-backed generation.",
-        ],
+        "github_demo_notes": notes,
     }
 
 
-def write_package(base_dir: Path, product_input: ProductInput) -> Path:
-    payload = build_package(product_input)
+def write_package(base_dir: Path, product_input: ProductInput, competitor_insights: dict | None = None) -> Path:
+    payload = build_package(product_input, competitor_insights)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output_dir = base_dir / "outputs" / f"{timestamp}-{_slugify(product_input.product_niche)}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     (output_dir / "package.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    readme_extra = ""
+    if competitor_insights:
+        readme_extra = "\n- Competitor research applied\n"
     (output_dir / "README.md").write_text(
         "# Draft Listing Package\n\n"
         f"- Product niche: {product_input.product_niche}\n"
         f"- Buyer: {product_input.buyer}\n"
         f"- Format: {product_input.product_format}\n"
-        f"- Tone: {product_input.tone}\n",
+        f"- Tone: {product_input.tone}\n"
+        f"{readme_extra}",
         encoding="utf-8",
     )
     return output_dir
