@@ -9,14 +9,15 @@ Current scope:
 - Saves outputs to timestamped folders for manual review
 - Optional competitor-informed generation (pass `--research` with competitor JSON)
 - Optional LLM-backed generation via OpenAI (set `ETSY_USE_LLM=1`)
+- Optional Etsy OAuth + draft listing upload (requires Etsy developer credentials)
 
-This project is intentionally portfolio-first and draft-first. It does not auto-publish to Etsy.
+This project is intentionally portfolio-first and draft-first. It does not auto-publish to Etsy without review.
 
 ## Quick Start
 
 ```bash
 cd /data/.openclaw/workspace/etsy-ai-digital-products-agent
-PYTHONPATH=src python3 -m etsy_agent.cli \
+PYTHONPATH=src python3 -m etsy_agent.cli generate \
   --product-niche "AI job search planner for product managers" \
   --buyer "Senior PMs and AI PM candidates" \
   --format "Google Sheets + PDF" \
@@ -30,7 +31,7 @@ Outputs are written to `outputs/<timestamp>-<slug>/`.
 Feed in competitor listing data to get price, tag, and title suggestions informed by the market:
 
 ```bash
-PYTHONPATH=src python3 -m etsy_agent.cli \
+PYTHONPATH=src python3 -m etsy_agent.cli generate \
   --product-niche "Budget meal planner for busy parents" \
   --buyer "Working parents with 2+ kids" \
   --format "Notion + PDF" \
@@ -68,7 +69,7 @@ Save the results to JSON and pass them to `--research`.
 Set `ETSY_USE_LLM=1` to use OpenAI for generation (requires `OPENAI_API_KEY`):
 
 ```bash
-ETSY_USE_LLM=1 PYTHONPATH=src python3 -m etsy_agent.cli \
+ETSY_USE_LLM=1 PYTHONPATH=src python3 -m etsy_agent.cli generate \
   --product-niche "Budget meal planner for busy parents" \
   --buyer "Working parents with 2+ kids" \
   --format "Notion + PDF" \
@@ -82,7 +83,7 @@ If the LLM call fails (quota, network), the tool exits with a clear error so you
 Generate detailed image prompts and Etsy guidelines for your listing photos:
 
 ```bash
-PYTHONPATH=src python3 -m etsy_agent.cli \
+PYTHONPATH=src python3 -m etsy_agent.cli generate \
   --product-niche "Budget meal planner for busy parents" \
   --buyer "Working parents with 2+ kids" \
   --format "Notion + PDF" \
@@ -100,16 +101,73 @@ This produces `image-brief.json` with 6 image types:
 
 Each includes a detailed prompt, design tips, and dimensions.
 
+## Etsy OAuth & Draft Listing Upload
+
+### 1. Register an Etsy Developer App
+
+1. Go to https://www.etsy.com/developers/your-apps
+2. Create a new app
+3. Note your **keystring** (client_id) and **shared secret** (client_secret)
+4. Set a redirect URI (e.g., `https://localhost:3000/oauth/callback`)
+
+### 2. Set environment variables
+
+```bash
+export ETSY_CLIENT_ID="your-keystring"
+export ETSY_CLIENT_SECRET="your-shared-secret"
+export ETSY_SHOP_ID="your-shop-id"
+export ETSY_REDIRECT_URI="https://localhost:3000/oauth/callback"
+```
+
+Find your shop ID by visiting your shop page and checking the URL, or via the Etsy API.
+
+### 3. Authenticate
+
+```bash
+PYTHONPATH=src python3 -m etsy_agent.cli auth
+```
+
+This prints an OAuth URL. Open it in your browser, authorize the app, then copy the `code` from the redirect URL.
+
+### 4. Exchange code for token
+
+```bash
+PYTHONPATH=src python3 -m etsy_agent.cli exchange --code "YOUR_CODE"
+```
+
+This saves `etsy_token.json` for future API calls.
+
+### 5. Upload a draft listing
+
+```bash
+PYTHONPATH=src python3 -m etsy_agent.cli upload \
+  --package outputs/20260617T000000Z-your-product \
+  --dry-run
+```
+
+Remove `--dry-run` to actually create the draft listing on Etsy.
+
+### 6. Activate as digital download
+
+After uploading images and digital files via Etsy's web UI or API:
+
+```bash
+PYTHONPATH=src python3 -m etsy_agent.cli activate --listing-id "YOUR_LISTING_ID"
+```
+
+This sets the listing type to `download` (required for digital products).
+
 ## Layout
 
-- `src/etsy_agent/cli.py` - CLI entrypoint
+- `src/etsy_agent/cli.py` - CLI entrypoint with generate/auth/exchange/upload/activate commands
 - `src/etsy_agent/generator.py` - deterministic + optional LLM package generator
 - `src/etsy_agent/research.py` - competitor analysis and market insights
 - `src/etsy_agent/image_brief.py` - image prompt and brief generation
+- `src/etsy_agent/etsy_client.py` - Etsy OAuth + API v3 client
 - `outputs/` - generated draft packages
 
 ## Near-Term Next Steps
 
-1. Add Etsy OAuth and draft-listing upload when credentials are ready.
-2. Add automated competitor-data gathering via search APIs.
-3. Generate actual listing images using the image briefs with AI image models.
+1. Add automated competitor-data gathering via search APIs.
+2. Generate actual listing images using the image briefs with AI image models.
+3. Add file upload support for digital products via `uploadListingFile`.
