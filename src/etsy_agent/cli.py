@@ -6,6 +6,7 @@ from pathlib import Path
 
 from etsy_agent.generator import ProductInput, write_package
 from etsy_agent.research import load_competitor_data, analyze_competitors, save_insights
+from etsy_agent.image_brief import write_image_brief
 
 
 def parse_args() -> argparse.Namespace:
@@ -16,6 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tone", required=True)
     parser.add_argument("--research", type=Path, help="Path to competitor JSON data (from web search results)")
     parser.add_argument("--research-out", type=Path, help="Path to write competitor analysis insights JSON")
+    parser.add_argument("--image-brief", action="store_true", help="Also generate a detailed image brief")
     return parser.parse_args()
 
 
@@ -42,7 +44,13 @@ def main() -> None:
 
     project_root = Path(__file__).resolve().parents[2]
     output_dir = write_package(project_root, product_input, competitor_insights)
-    print(output_dir)
+    print(f"Package: {output_dir}")
+
+    if args.image_brief:
+        brief_path = write_image_brief(
+            project_root, product_input.product_niche, product_input.product_format, product_input.tone
+        )
+        print(f"Image brief: {brief_path}")
 
 
 if __name__ == "__main__":

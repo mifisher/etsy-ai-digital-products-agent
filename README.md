@@ -77,15 +77,39 @@ ETSY_USE_LLM=1 PYTHONPATH=src python3 -m etsy_agent.cli \
 
 If the LLM call fails (quota, network), the tool exits with a clear error so you can fall back to deterministic mode.
 
+## Image Brief Mode
+
+Generate detailed image prompts and Etsy guidelines for your listing photos:
+
+```bash
+PYTHONPATH=src python3 -m etsy_agent.cli \
+  --product-niche "Budget meal planner for busy parents" \
+  --buyer "Working parents with 2+ kids" \
+  --format "Notion + PDF" \
+  --tone "Simple, friendly, no-fluff" \
+  --image-brief
+```
+
+This produces `image-brief.json` with 6 image types:
+- **Hero Image** — main thumbnail (1:1, 2000x2000px)
+- **Feature Breakdown** — what's included (4:3, 2000x1500px)
+- **Lifestyle / In-Use** — product in context (4:3)
+- **Detail / Close-Up** — quality showcase (1:1)
+- **Before / After** — transformation story (4:3)
+- **Social Proof** — testimonials or results (4:3)
+
+Each includes a detailed prompt, design tips, and dimensions.
+
 ## Layout
 
 - `src/etsy_agent/cli.py` - CLI entrypoint
 - `src/etsy_agent/generator.py` - deterministic + optional LLM package generator
 - `src/etsy_agent/research.py` - competitor analysis and market insights
+- `src/etsy_agent/image_brief.py` - image prompt and brief generation
 - `outputs/` - generated draft packages
 
 ## Near-Term Next Steps
 
 1. Add Etsy OAuth and draft-listing upload when credentials are ready.
-2. Add image-brief generation for listing mockups.
-3. Add automated competitor-data gathering via search APIs.
+2. Add automated competitor-data gathering via search APIs.
+3. Generate actual listing images using the image briefs with AI image models.
