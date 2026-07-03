@@ -117,6 +117,11 @@ def cmd_upload(args: argparse.Namespace) -> None:
         title=listing["title"],
         description=listing["description"],
         price=listing["price_recommendation_usd"],
+        who_made=listing.get("who_made", "i_did"),
+        when_made=listing.get("when_made", "made_to_order"),
+        taxonomy_id=listing.get("taxonomy_id", 12476),
+        is_supply=listing.get("is_supply", False),
+        listing_type=listing.get("type", "download"),
         tags=listing.get("tags", []),
     )
 

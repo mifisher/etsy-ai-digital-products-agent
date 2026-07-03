@@ -6,3 +6,8 @@ dist/
 build/
 *.egg-info/
 outputs/
+set-env.sh
+.env
+etsy_token.json
+etsy_token.oauth.json
+~$*

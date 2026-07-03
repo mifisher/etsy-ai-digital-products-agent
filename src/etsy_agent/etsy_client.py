@@ -167,24 +167,29 @@ def build_draft_payload(
     quantity: int = 999,
     who_made: str = "i_did",
     when_made: str = "made_to_order",
-    taxonomy_id: int = 1,
+    taxonomy_id: int = 12476,
+    is_supply: bool = False,
+    listing_type: str = "download",
     tags: list[str] | None = None,
     image_ids: list[int] | None = None,
 ) -> dict:
     """Build the minimum payload for createDraftListing.
 
-    For digital products, you must later:
-      1. upload a file via uploadListingFile
-      2. PATCH the listing with type='download'
+    Passing type='download' at creation marks it a digital listing, so no
+    shipping profile is required. After creation you still:
+      1. upload listing images
+      2. upload the digital file via uploadListingFile
     """
     payload: dict = {
         "quantity": quantity,
-        "title": title,
+        "title": title[:140],
         "description": description,
         "price": price,
         "who_made": who_made,
         "when_made": when_made,
         "taxonomy_id": taxonomy_id,
+        "is_supply": is_supply,
+        "type": listing_type,
     }
     if tags:
         payload["tags"] = tags[:13]
