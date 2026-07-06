@@ -11,3 +11,4 @@ set-env.sh
 etsy_token.json
 etsy_token.oauth.json
 ~$*
+product/
