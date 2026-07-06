@@ -16,7 +16,7 @@ This project is intentionally portfolio-first and draft-first. It does not auto-
 ## Quick Start
 
 ```bash
-cd /data/.openclaw/workspace/etsy-ai-digital-products-agent
+cd etsy-ai-digital-products-agent
 PYTHONPATH=src python3 -m etsy_agent.cli generate \
   --product-niche "AI job search planner for product managers" \
   --buyer "Senior PMs and AI PM candidates" \
@@ -66,15 +66,41 @@ Save the results to JSON and pass them to `--research`.
 
 ## LLM Mode
 
-Set `ETSY_USE_LLM=1` to use OpenAI for generation (requires `OPENAI_API_KEY`):
+Set `ETSY_USE_LLM=1` to generate copy with an LLM. Two providers are supported
+(both use the `openai` package — `pip install openai`):
+
+**Moonshot (Kimi):**
 
 ```bash
-ETSY_USE_LLM=1 PYTHONPATH=src python3 -m etsy_agent.cli generate \
+export ETSY_USE_LLM=1
+export ETSY_LLM_PROVIDER=moonshot
+export MOONSHOT_API_KEY="your-moonshot-key"
+# optional: export ETSY_LLM_MODEL=kimi-k2-0711-preview
+
+PYTHONPATH=src python3 -m etsy_agent.cli generate \
   --product-niche "Budget meal planner for busy parents" \
   --buyer "Working parents with 2+ kids" \
   --format "Notion + PDF" \
   --tone "Simple, friendly, no-fluff"
 ```
+
+**OpenAI:**
+
+```bash
+export ETSY_USE_LLM=1
+export ETSY_LLM_PROVIDER=openai   # (default)
+export OPENAI_API_KEY="your-openai-key"
+```
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `ETSY_LLM_PROVIDER` | `moonshot` or `openai` | `openai` |
+| `MOONSHOT_API_KEY` / `OPENAI_API_KEY` | provider API key | — |
+| `ETSY_LLM_MODEL` | model override | `kimi-k2-0711-preview` / `gpt-4.1` |
+| `MOONSHOT_BASE_URL` | Moonshot endpoint | `https://api.moonshot.ai/v1` |
+
+Keep keys out of git: put these `export`s in a git-ignored `set-env.sh` and
+`source set-env.sh`. Never hardcode a key in tracked files.
 
 If the LLM call fails (quota, network), the tool exits with a clear error so you can fall back to deterministic mode.
 

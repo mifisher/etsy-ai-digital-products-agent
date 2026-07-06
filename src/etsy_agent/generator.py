@@ -123,7 +123,13 @@ def _generate_description(product_input: ProductInput) -> str:
     )
 
 
-def _llm_generate_package(product_input: ProductInput) -> dict:
+def _build_llm_client():
+    """Return (client, model, openai_module) for the configured LLM provider.
+
+    Provider is chosen with ETSY_LLM_PROVIDER ("openai" default, or "moonshot").
+    Moonshot is OpenAI-API-compatible, so it uses the same ``openai`` package
+    pointed at Moonshot's base URL. Override the model with ETSY_LLM_MODEL.
+    """
     try:
         import openai
     except ModuleNotFoundError:
@@ -132,7 +138,31 @@ def _llm_generate_package(product_input: ProductInput) -> dict:
             "or unset ETSY_USE_LLM to use deterministic generation."
         )
 
-    client = openai.OpenAI()
+    provider = os.getenv("ETSY_LLM_PROVIDER", "openai").strip().lower()
+
+    if provider == "moonshot":
+        api_key = os.getenv("MOONSHOT_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "ETSY_LLM_PROVIDER=moonshot but MOONSHOT_API_KEY is not set. "
+                "Add it to your environment (see set-env.sh)."
+            )
+        base_url = os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.ai/v1").strip()
+        model = os.getenv("ETSY_LLM_MODEL", "kimi-k2-0711-preview").strip()
+        return openai.OpenAI(api_key=api_key, base_url=base_url), model, openai
+
+    # default: OpenAI
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set. Set it, or set ETSY_LLM_PROVIDER=moonshot "
+            "to use MOONSHOT_API_KEY instead."
+        )
+    model = os.getenv("ETSY_LLM_MODEL", "gpt-4.1").strip()
+    return openai.OpenAI(), model, openai
+
+
+def _llm_generate_package(product_input: ProductInput) -> dict:
+    client, model, openai = _build_llm_client()
     system_prompt = (
         "You are an expert Etsy listing copywriter and digital-product strategist. "
         "Given a product niche, buyer persona, format, and tone, output ONLY a valid JSON object with:\n"
@@ -154,7 +184,7 @@ def _llm_generate_package(product_input: ProductInput) -> dict:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4.1",
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -164,7 +194,7 @@ def _llm_generate_package(product_input: ProductInput) -> dict:
         )
     except openai.RateLimitError as exc:
         raise RuntimeError(
-            "OpenAI rate limit or quota exceeded. "
+            "LLM rate limit or quota exceeded. "
             "Unset ETSY_USE_LLM to fall back to deterministic generation."
         ) from exc
 
