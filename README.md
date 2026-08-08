@@ -192,6 +192,47 @@ This sets the listing type to `download` (required for digital products).
 - `src/etsy_agent/etsy_client.py` - Etsy OAuth + API v3 client
 - `outputs/` - generated draft packages
 
+## Opportunity Radar
+
+`radar/` is a separate module that searches Etsy for product niches, scores
+them (quantitative signals + optional LLM judgment), and writes a weekly
+markdown digest to `history/digests/`.
+
+Run it manually:
+
+```bash
+source set-env.sh
+python -m radar.run --config config/lanes.yml --history history
+```
+
+Add `--dry-run` to print the digest without writing to `history/`.
+
+### Scheduled run
+
+`.github/workflows/radar.yml` runs the radar every Monday (`workflow_dispatch`
+is also enabled for on-demand runs) and commits the resulting digest back to
+`history/`. It has `contents: write` permission and no `pull_request` trigger,
+so repository secrets are never exposed to a fork PR.
+
+Required repo secrets: `ETSY_CLIENT_ID`, `ETSY_CLIENT_SECRET`, `ETSY_SHOP_ID`,
+`MOONSHOT_API_KEY`.
+
+### Public sync
+
+This repo is private because `history/`, `product/`, `config/lanes.yml`, and
+credentials hold real business strategy and cannot be published. `sync-public.sh`
+copies an explicit **allowlist** of code paths (radar module, tests, generic
+workflow files, README, `config/lanes.example.yml`) into a separate public
+portfolio checkout:
+
+```bash
+./sync-public.sh ~/coding-projects/etsy-ai-digital-products-agent
+```
+
+Nothing outside the allowlist is copied — adding a new file here does nothing
+to the public repo until it's named in `sync-public.sh`. Always review
+`git status` in the public checkout before committing.
+
 ## Near-Term Next Steps
 
 1. Add automated competitor-data gathering via search APIs.
