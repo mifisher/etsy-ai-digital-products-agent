@@ -60,6 +60,10 @@ class EtsyPublicClient:
                 if not retryable or attempt == self.max_retries - 1:
                     raise
                 time.sleep(2**attempt)
+            except (urllib.error.URLError, TimeoutError):
+                if attempt == self.max_retries - 1:
+                    raise
+                time.sleep(2**attempt)
         raise RuntimeError("unreachable")
 
     def search_active(self, keywords: str, limit: int = 20) -> dict:

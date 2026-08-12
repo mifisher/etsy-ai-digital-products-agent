@@ -1,3 +1,5 @@
+import json
+import logging
 from pathlib import Path
 
 from radar.history import (
@@ -69,3 +71,57 @@ def test_pursued_lane_is_not_suppressed(tmp_path: Path):
     append_decisions(tmp_path, "2026-08-04", [_candidate("good", "pursue", 0.9)])
 
     assert "good" not in recently_rejected(tmp_path, "2026-08-11", cooldown_days=30)
+
+
+def test_recently_rejected_skips_malformed_line_but_honors_good_lines(
+    tmp_path: Path,
+):
+    """A truncated/garbage line (e.g. from an interrupted Action run or a
+    merge conflict marker) must not abort the whole read — the valid
+    records before and after it must still be honored."""
+    log = tmp_path / "decisions.jsonl"
+    log.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "date": "2026-08-01",
+                        "lane_id": "first",
+                        "niche": "n",
+                        "score": 0.1,
+                        "verdict": "skip",
+                    }
+                ),
+                '{"date": "2026-08-02", "lane_id": "broken", "verd',  # truncated
+                "<<<<<<< HEAD",  # merge conflict marker
+                json.dumps(
+                    {
+                        "date": "2026-08-03",
+                        "lane_id": "second",
+                        "niche": "n",
+                        "score": 0.1,
+                        "verdict": "skip",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rejected = recently_rejected(tmp_path, "2026-08-11", cooldown_days=30)
+
+    assert "first" in rejected
+    assert "second" in rejected
+    assert "broken" not in rejected
+
+
+def test_recently_rejected_logs_warning_on_malformed_line(tmp_path, caplog):
+    log = tmp_path / "decisions.jsonl"
+    log.write_text("not json at all\n", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="radar.history"):
+        result = recently_rejected(tmp_path, "2026-08-11", cooldown_days=30)
+
+    assert result == set()
+    assert any("malformed" in rec.message.lower() for rec in caplog.records)

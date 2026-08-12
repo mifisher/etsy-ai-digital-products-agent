@@ -9,7 +9,7 @@ SIGNALS = LaneSignals(
     lane_id="x",
     keyword="kw",
     active_listings=500,
-    median_favorites=40,
+    mean_favorites=40,
     median_price=18.0,
     sample_titles=["A", "B"],
     sample_size=2,
@@ -81,3 +81,20 @@ def test_judge_lane_returns_none_when_client_raises():
             raise RuntimeError("provider down")
 
     assert judge_lane(Boom(), "kimi", LANE, SIGNALS) is None
+
+
+def test_judge_lane_logs_warning_on_failure_but_still_returns_none(caplog):
+    """FIX 4: a provider outage must not be silent — it must be logged —
+    while the fallback contract (return None, never raise) stays exactly
+    as-is."""
+    import logging
+
+    class Boom:
+        def __getattr__(self, name):
+            raise RuntimeError("provider down")
+
+    with caplog.at_level(logging.WARNING, logger="radar.llm"):
+        result = judge_lane(Boom(), "kimi", LANE, SIGNALS)
+
+    assert result is None
+    assert any("provider down" in rec.message for rec in caplog.records)

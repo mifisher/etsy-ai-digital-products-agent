@@ -8,7 +8,7 @@ class LaneSignals:
     lane_id: str
     keyword: str
     active_listings: int
-    median_favorites: float
+    mean_favorites: float
     median_price: float
     sample_titles: list[str] = field(default_factory=list)
     sample_size: int = 0

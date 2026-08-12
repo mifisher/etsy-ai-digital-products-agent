@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
 from radar.config import Lane
 from radar.models import Judgment, LaneSignals
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You evaluate Etsy digital-product opportunities. You are given REAL "
@@ -32,7 +35,7 @@ def build_client() -> tuple[Any, str]:
         if not api_key:
             raise RuntimeError("MOONSHOT_API_KEY is not set")
         base_url = os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.ai/v1")
-        model = os.getenv("ETSY_LLM_MODEL", "kimi-k2-0711-preview")
+        model = os.getenv("ETSY_LLM_MODEL", "moonshot-v1-32k")
         return openai.OpenAI(api_key=api_key, base_url=base_url), model
 
     if not os.getenv("OPENAI_API_KEY", "").strip():
@@ -49,7 +52,7 @@ def _user_prompt(lane: Lane, signals: LaneSignals) -> str:
     return (
         f"Niche keyword: {signals.keyword}\n"
         f"Active competing listings: {signals.active_listings}\n"
-        f"Median favorites (top {signals.sample_size}): {signals.median_favorites}\n"
+        f"Mean favorites (top {signals.sample_size}): {signals.mean_favorites}\n"
         f"Median price: ${signals.median_price:.2f}\n"
         f"Competitor titles:\n{titles}\n"
     )
@@ -70,7 +73,7 @@ def judge_lane(
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": _user_prompt(lane, signals)},
             ],
-            temperature=0.4,
+            temperature=float(os.getenv("ETSY_LLM_TEMPERATURE", "0.4")),
         )
         data = json.loads(response.choices[0].message.content)
         return Judgment(
@@ -85,5 +88,6 @@ def judge_lane(
             why_this_could_sell=str(data.get("why_this_could_sell", "")),
             price_range_usd=[int(x) for x in data.get("price_range_usd", [0, 0])],
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("LLM judgment failed for lane %s: %s", lane.id, exc)
         return None

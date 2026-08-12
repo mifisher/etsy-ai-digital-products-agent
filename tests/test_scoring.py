@@ -11,7 +11,7 @@ def _sig(lane_id, favs, listings, price):
         lane_id=lane_id,
         keyword="k",
         active_listings=listings,
-        median_favorites=favs,
+        mean_favorites=favs,
         median_price=price,
         sample_size=20,
     )

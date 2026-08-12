@@ -24,13 +24,13 @@ def log_minmax(values: list[float]) -> list[float]:
 
 def gap_ratios(signals: list[LaneSignals]) -> list[float]:
     """Demand per unit of competition — the underserved-ness term."""
-    return [s.median_favorites / max(s.active_listings, 1) for s in signals]
+    return [s.mean_favorites / max(s.active_listings, 1) for s in signals]
 
 
 def quantitative_scores(signals: list[LaneSignals], weights: dict) -> list[float]:
     if not signals:
         return []
-    demand = log_minmax([s.median_favorites for s in signals])
+    demand = log_minmax([s.mean_favorites for s in signals])
     gap = log_minmax(gap_ratios(signals))
     price = log_minmax([s.median_price for s in signals])
     return [
@@ -104,7 +104,7 @@ def build_candidates(
                 buyer=judgment.buyer if judgment else "",
                 product_format=judgment.product_format if judgment else "",
                 demand_signal={
-                    "median_favorites": sig.median_favorites,
+                    "mean_favorites": sig.mean_favorites,
                     "sample_size": sig.sample_size,
                 },
                 competition_signal={"active_listings": sig.active_listings},

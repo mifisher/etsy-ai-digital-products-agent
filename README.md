@@ -1,19 +1,112 @@
 # Etsy AI Digital Products Agent
 
-CLI tool for generating Etsy draft-listing packages for AI-assisted digital products.
+Two tools for running a digital-products shop on Etsy:
 
-Current scope:
-- Takes a product niche, buyer, format, and tone
-- Generates a structured product brief
-- Produces Etsy listing metadata, tags, disclosure copy, and a file manifest
-- Saves outputs to timestamped folders for manual review
-- Optional competitor-informed generation (pass `--research` with competitor JSON)
-- Optional LLM-backed generation via OpenAI (set `ETSY_USE_LLM=1`)
-- Optional Etsy OAuth + draft listing upload (requires Etsy developer credentials)
+1. **Opportunity Radar** — a scheduled agent that searches Etsy for underserved
+   product niches, scores them against live marketplace data, diagnoses why your
+   own listings are or are not selling, and files a weekly digest telling you the
+   single best thing to do next.
+2. **Listing generator** — a CLI that turns a product niche into an Etsy listing
+   package (title, 13 tags, description, AI disclosure, pricing) and can create
+   the draft listing over the Etsy API.
 
-This project is intentionally portfolio-first and draft-first. It does not auto-publish to Etsy without review.
+Fork it, point it at your own shop and your own niches, and it will run itself.
+Nothing publishes to Etsy without your review.
 
-## Quick Start
+[See a sample weekly digest →](docs/sample-digest.md)
+
+---
+
+## Fork and run the radar
+
+**1. Fork this repo**, then clone your fork.
+
+**2. Get Etsy API credentials.** Create an app at
+[etsy.com/developers](https://www.etsy.com/developers/register). You need the
+keystring and the shared secret. Note that Etsy expects them **combined** in the
+`x-api-key` header as `keystring:shared_secret` — the keystring alone returns a
+403, which this client already handles.
+
+**3. Configure your niches.**
+
+```bash
+cp config/lanes.example.yml config/lanes.yml   # config/lanes.yml is gitignored
+```
+
+Edit it: set `shop_id` (find it at `/v3/application/shops?shop_name=YOURSHOP`),
+then replace the example lanes with the niches you want researched. Each lane has:
+
+| Field | Meaning |
+|---|---|
+| `keywords` | What the radar searches Etsy for |
+| `credibility` | 0–1. How believable *your* copy would be in this niche. A deliberate human judgement — asking the model to rate your own credibility just invites flattery. |
+| `brand_fit` | `my_shop` or `new_shop`. Routes the recommendation. |
+
+**4. Run it locally.**
+
+```bash
+cp set-env.example.sh set-env.sh    # gitignored; fill in your keys
+source set-env.sh
+pip install pyyaml openai
+PYTHONPATH=. python -m radar.run --dry-run   # --dry-run writes nothing
+```
+
+**5. Schedule it.** Copy `docs/radar.public.yml` to
+`.github/workflows/radar.yml`, add your secrets under *Settings → Secrets and
+variables → Actions*, and uncomment the `schedule:` block. It ships
+dispatch-only so forking never starts a cron job you did not ask for.
+
+Each run commits a digest to `history/digests/` **and files it as a GitHub
+issue**, so GitHub emails it to you. A weekly report nobody reads is worth
+nothing; that step is what closes the loop.
+
+> **Keep your strategy private.** Your real niche list, digests and decision
+> history are business intelligence. `config/lanes.yml` and `history/` are
+> gitignored here for that reason. If you intend to publish your fork, note that
+> **GitHub Actions logs and artifacts on public repos are readable by anyone** —
+> run the radar from a private repo and mirror only code outward.
+> `sync-public.sh` does this by allowlist, and refuses to run if it finds
+> private strings in what it is about to copy.
+
+## How the scoring works
+
+Each niche gets a score in `[0,1]`, built from two halves. The split exists
+because neither half is trustworthy alone: pure marketplace math cannot tell
+whether a pain is urgent or expensive, and a language model asked to estimate
+demand will simply invent it.
+
+```
+quantitative = 0.40·demand + 0.40·gap + 0.20·price
+    demand — mean favorites across the sampled listings
+    gap    — demand ÷ active listing count, i.e. underserved-ness
+    price  — median price
+
+qualitative  = 0.30·pain_urgency + 0.30·willingness_to_pay
+             + 0.25·differentiation + 0.15·credibility
+             (LLM-judged, while looking at the real competitor data)
+
+score = 0.45·quantitative + 0.35·qualitative + 0.20·ease_to_create
+```
+
+Every weight and threshold lives in `config/lanes.yml`, so you can retune
+without touching code; each group is validated to sum to 1.0 at load time.
+
+Two details worth knowing if you modify this:
+
+- **Demand uses the mean, not the median.** Etsy favorite counts are heavy-tailed
+  and mostly zero — a real sample was `[0, 0, 34, 1475, 470]`. The median
+  collapses to ~0 for nearly every niche and erases the signal. The tail *is* the
+  signal. Price still uses the median, where robustness to one outlier is correct.
+- **Normalization is min-max within a single run**, so scores are comparative for
+  that run rather than absolute across time.
+
+If the LLM is unavailable — no key, no credit, provider outage — the run
+degrades to quantitative-only scoring, marks the digest as provisional, and
+still ships. It never fails the week.
+
+## Listing generator (CLI)
+
+A separate tool from the radar: turns one niche into a listing package.
 
 ```bash
 cd etsy-ai-digital-products-agent
@@ -75,7 +168,7 @@ Set `ETSY_USE_LLM=1` to generate copy with an LLM. Two providers are supported
 export ETSY_USE_LLM=1
 export ETSY_LLM_PROVIDER=moonshot
 export MOONSHOT_API_KEY="your-moonshot-key"
-# optional: export ETSY_LLM_MODEL=kimi-k2-0711-preview
+# optional: export ETSY_LLM_MODEL=moonshot-v1-32k   (kimi-* models fail JSON mode)
 
 PYTHONPATH=src python3 -m etsy_agent.cli generate \
   --product-niche "Budget meal planner for busy parents" \
@@ -96,7 +189,7 @@ export OPENAI_API_KEY="your-openai-key"
 |---|---|---|
 | `ETSY_LLM_PROVIDER` | `moonshot` or `openai` | `openai` |
 | `MOONSHOT_API_KEY` / `OPENAI_API_KEY` | provider API key | — |
-| `ETSY_LLM_MODEL` | model override | `kimi-k2-0711-preview` / `gpt-4.1` |
+| `ETSY_LLM_MODEL` | model override | `moonshot-v1-32k` / `gpt-4.1` |
 | `MOONSHOT_BASE_URL` | Moonshot endpoint | `https://api.moonshot.ai/v1` |
 
 Keep keys out of git: put these `export`s in a git-ignored `set-env.sh` and
@@ -185,56 +278,50 @@ This sets the listing type to `download` (required for digital products).
 
 ## Layout
 
-- `src/etsy_agent/cli.py` - CLI entrypoint with generate/auth/exchange/upload/activate commands
-- `src/etsy_agent/generator.py` - deterministic + optional LLM package generator
-- `src/etsy_agent/research.py` - competitor analysis and market insights
-- `src/etsy_agent/image_brief.py` - image prompt and brief generation
-- `src/etsy_agent/etsy_client.py` - Etsy OAuth + API v3 client
-- `outputs/` - generated draft packages
+**Radar** — the scheduled agent:
 
-## Opportunity Radar
+| File | Responsibility |
+|---|---|
+| `radar/run.py` | Orchestrates a run: collect → judge → score → digest → persist |
+| `radar/config.py` | Loads lanes, weights and thresholds; validates weight sums |
+| `radar/etsy_api.py` | Read-only Etsy client with throttling and retries |
+| `radar/collectors.py` | Turns API responses into signals; diagnoses your listings |
+| `radar/scoring.py` | Normalization, the quantitative model, verdicts, routing |
+| `radar/llm.py` | Grounded qualitative judgement, with a safe no-op fallback |
+| `radar/history.py` | Snapshots, decision log, rejection cooldown |
+| `radar/digest.py` | Renders the weekly markdown report |
 
-`radar/` is a separate module that searches Etsy for product niches, scores
-them (quantitative signals + optional LLM judgment), and writes a weekly
-markdown digest to `history/digests/`.
+**Listing generator** — the CLI:
 
-Run it manually:
+| File | Responsibility |
+|---|---|
+| `src/etsy_agent/cli.py` | `generate` / `auth` / `exchange` / `upload` / `activate` |
+| `src/etsy_agent/generator.py` | Deterministic + optional LLM package generation |
+| `src/etsy_agent/research.py` | Competitor analysis and market insights |
+| `src/etsy_agent/image_brief.py` | Listing-image prompts and specs |
+| `src/etsy_agent/etsy_client.py` | Etsy OAuth + API v3 write client |
 
-```bash
-source set-env.sh
-python -m radar.run --config config/lanes.yml --history history
-```
+Run the tests with `python -m pytest tests/ -v`.
 
-Add `--dry-run` to print the digest without writing to `history/`.
+## Known limitations
 
-### Scheduled run
+Worth knowing before relying on this:
 
-`.github/workflows/radar.yml` runs the radar every Monday (`workflow_dispatch`
-is also enabled for on-demand runs) and commits the resulting digest back to
-`history/`. It has `contents: write` permission and no `pull_request` trigger,
-so repository secrets are never exposed to a fork PR.
-
-Required repo secrets: `ETSY_CLIENT_ID`, `ETSY_CLIENT_SECRET`, `ETSY_SHOP_ID`,
-`MOONSHOT_API_KEY`.
-
-### Public sync
-
-This repo is private because `history/`, `product/`, `config/lanes.yml`, and
-credentials hold real business strategy and cannot be published. `sync-public.sh`
-copies an explicit **allowlist** of code paths (radar module, tests, generic
-workflow files, README, `config/lanes.example.yml`) into a separate public
-portfolio checkout:
-
-```bash
-./sync-public.sh ~/coding-projects/etsy-ai-digital-products-agent
-```
-
-Nothing outside the allowlist is copied — adding a new file here does nothing
-to the public repo until it's named in `sync-public.sh`. Always review
-`git status` in the public checkout before committing.
+- **No search-volume data.** Etsy's API does not expose it, and this project
+  deliberately avoids paid keyword tools. Demand is inferred from favorites on
+  competing listings — a proxy, not a measurement.
+- **Scores are comparative, not absolute.** Min-max normalization happens within
+  a single run, so a 0.78 this week and a 0.78 next week are not the same thing.
+- **The model's prose is weaker than its numbers.** Ratings are grounded in real
+  marketplace data; the narrative rationale can still be thin, or conflate supply
+  with demand. Read it as a prompt for your own thinking, not a conclusion.
+- **Nothing builds the product.** The radar tells you what to make. Making it is
+  still your job.
+- **Rejected niches are hidden for 30 days** by default (`reject_cooldown_days`),
+  so a digest can look sparse after a few runs. Lower it while tuning.
 
 ## Near-Term Next Steps
 
-1. Add automated competitor-data gathering via search APIs.
-2. Generate actual listing images using the image briefs with AI image models.
-3. Add file upload support for digital products via `uploadListingFile`.
+1. Templatize product generation so a recommendation can become a draft SKU.
+2. Generate listing images from the image briefs with an image model.
+3. Add file upload for digital products via `uploadListingFile`.

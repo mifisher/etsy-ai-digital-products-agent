@@ -1,0 +1,69 @@
+# Opportunity Radar — scheduled run
+#
+# Copy this file to .github/workflows/radar.yml in YOUR fork, then uncomment
+# the `schedule:` block below to have it run weekly.
+#
+# It ships with only `workflow_dispatch` enabled so that forking this repo
+# never starts a cron job you did not ask for. Run it by hand from the
+# Actions tab until you are happy with your lane list and scoring weights.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   ETSY_CLIENT_ID      your Etsy app keystring
+#   ETSY_CLIENT_SECRET  your Etsy app shared secret
+#   MOONSHOT_API_KEY    or OPENAI_API_KEY, see ETSY_LLM_PROVIDER below
+#
+# The radar reads your shop id from config/lanes.yml, not from a secret.
+
+name: Opportunity Radar
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "0 13 * * 1"   # Mondays 13:00 UTC
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml openai
+
+      - name: Run radar
+        env:
+          ETSY_CLIENT_ID: ${{ secrets.ETSY_CLIENT_ID }}
+          ETSY_CLIENT_SECRET: ${{ secrets.ETSY_CLIENT_SECRET }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          ETSY_LLM_PROVIDER: moonshot
+          PYTHONPATH: .
+        run: python -m radar.run --config config/lanes.yml --history history
+
+      - name: Commit digest
+        run: |
+          git config user.name "opportunity-radar"
+          git config user.email "radar@users.noreply.github.com"
+          git add history/
+          git diff --staged --quiet || git commit -m "radar: digest $(date -u +%Y-%m-%d)"
+          git push
+
+      # Files the digest as an issue so GitHub emails it to you. Without this
+      # the digest only lands in the repo and nothing tells you it exists.
+      - name: Notify — file the digest as an issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DIGEST=$(ls -1 history/digests/*.md | sort | tail -n 1)
+          [ -z "$DIGEST" ] && exit 0
+          HEADLINE=$(grep -m1 '^\*\*This week' "$DIGEST" || echo "Radar ran")
+          gh issue create \
+            --title "Radar $(date -u +%Y-%m-%d) — ${HEADLINE}" \
+            --body-file "$DIGEST"

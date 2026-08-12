@@ -28,6 +28,8 @@ def render_digest(
     previous: dict[int, dict] | None,
     candidates: list[Candidate],
     llm_available: bool,
+    judged_count: int | None = None,
+    total_count: int | None = None,
 ) -> str:
     lines = [f"# Opportunity Radar — {run_date}", ""]
 
@@ -44,11 +46,19 @@ def render_digest(
         ]
 
     if not llm_available:
-        lines += [
-            "> ⚠️ LLM judgment unavailable this run — ranking is "
-            "**quantitative-only**. Treat verdicts as provisional.",
-            "",
-        ]
+        if judged_count is not None and total_count is not None:
+            lines += [
+                f"> ⚠️ LLM judgment incomplete this run "
+                f"({judged_count}/{total_count} lanes judged) — ranking is "
+                "**quantitative-only**. Treat verdicts as provisional.",
+                "",
+            ]
+        else:
+            lines += [
+                "> ⚠️ LLM judgment unavailable this run — ranking is "
+                "**quantitative-only**. Treat verdicts as provisional.",
+                "",
+            ]
 
     lines += ["## Existing listings", ""]
     if not snapshots:
@@ -71,13 +81,13 @@ def render_digest(
     lines += ["## Ranked candidates", ""]
     if candidates:
         lines += [
-            "| Niche | Score | Verdict | Favorites | Competing | Gap |",
+            "| Niche | Score | Verdict | Mean Favorites | Competing | Gap |",
             "|---|---|---|---|---|---|",
         ]
         for c in candidates:
             lines.append(
                 f"| {_esc(c.niche)} | {c.score:.2f} | {c.verdict} | "
-                f"{c.demand_signal.get('median_favorites', 0)} | "
+                f"{c.demand_signal.get('mean_favorites', 0)} | "
                 f"{c.competition_signal.get('active_listings', 0)} | "
                 f"{c.gap_ratio:.3f} |"
             )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from datetime import date
 from pathlib import Path
@@ -19,6 +20,8 @@ from radar.history import (
 from radar.models import Judgment, LaneSignals
 from radar.scoring import build_candidates
 
+logger = logging.getLogger(__name__)
+
 
 def run_radar(
     config: Config,
@@ -31,31 +34,57 @@ def run_radar(
     skip = recently_rejected(
         history_root, run_date, config.limits["reject_cooldown_days"]
     )
-    lanes = [lane for lane in config.lanes if lane.id not in skip]
+
+    # Collect and score every lane so log_minmax normalizes within the full
+    # pool. The cooldown is applied as a filter on the results below, right
+    # before the digest is rendered and decisions are appended — not before
+    # collection/scoring — otherwise a near-total cooldown collapses the
+    # normalization pool to one lane and degenerates every score to 0.5.
+    lanes = config.lanes
 
     signals = [
         collect_lane_signals(client, lane, config.limits["search_limit"])
         for lane in lanes
     ]
     judgments = {lane.id: judge(lane, sig) for lane, sig in zip(lanes, signals)}
-    llm_available = any(j is not None for j in judgments.values())
 
     candidates = build_candidates(
         signals, judgments, lanes, config.weights, config.thresholds
     )
 
+    # Only lanes not currently in cooldown are visible in the digest and may
+    # have a new decision recorded. Re-appending a "skip" for a cooled lane
+    # every week would push its cutoff date forward forever, so a suppressed
+    # lane must never get a fresh decision written for it.
+    visible_candidates = [c for c in candidates if c.lane_id not in skip]
+
+    # Scope the "how many were judged" banner to what the digest actually
+    # displays. A lane suppressed by the cooldown isn't in the table, so its
+    # judgment outcome shouldn't trigger (or silence) a warning about rows
+    # the reader can actually see. `qualitative` is None exactly when a
+    # candidate's judgment was unavailable (see build_candidates).
+    judged_count = sum(1 for c in visible_candidates if c.qualitative is not None)
+    total_count = len(visible_candidates)
+    llm_available = judged_count == total_count
+
     snapshots = snapshot_own_listings(client, config.shop_id)
     previous = load_previous_snapshot(history_root, before=run_date)
 
     markdown = render_digest(
-        run_date, snapshots, previous, candidates, llm_available
+        run_date,
+        snapshots,
+        previous,
+        visible_candidates,
+        llm_available,
+        judged_count=judged_count,
+        total_count=total_count,
     )
 
     if dry_run:
         return markdown, None
 
     write_snapshot(history_root, run_date, snapshots)
-    append_decisions(history_root, run_date, candidates)
+    append_decisions(history_root, run_date, visible_candidates)
     digests = history_root / "digests"
     digests.mkdir(parents=True, exist_ok=True)
     path = digests / f"{run_date}.md"
@@ -69,7 +98,12 @@ def _build_judge():
         from radar.llm import build_client, judge_lane
 
         client, model = build_client()
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "LLM client unavailable, falling back to quantitative-only "
+            "scoring: %s",
+            exc,
+        )
         return lambda lane, signals: None
     return lambda lane, signals: judge_lane(client, model, lane, signals)
 

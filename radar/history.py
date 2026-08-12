@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 from datetime import date, timedelta
 from pathlib import Path
 
 from radar.models import Candidate, ListingSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 def _snapshot_dir(root: Path) -> Path:
@@ -66,9 +69,15 @@ def recently_rejected(root: Path, run_date: str, cooldown_days: int) -> set[str]
     for line in log.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        record = json.loads(line)
-        if record.get("verdict") != "skip":
+        try:
+            record = json.loads(line)
+            if record.get("verdict") != "skip":
+                continue
+            if date.fromisoformat(record["date"]) >= cutoff:
+                rejected.add(record["lane_id"])
+        except Exception as exc:
+            logger.warning(
+                "Skipping malformed decisions.jsonl line: %s", exc
+            )
             continue
-        if date.fromisoformat(record["date"]) >= cutoff:
-            rejected.add(record["lane_id"])
     return rejected

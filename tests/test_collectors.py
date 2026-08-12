@@ -1,3 +1,5 @@
+import pytest
+
 from radar.collectors import collect_lane_signals, snapshot_own_listings, diagnose
 from radar.config import Lane
 
@@ -10,14 +12,22 @@ def _listing(fav, price_cents, title="t"):
     }
 
 
-def test_collect_lane_signals_uses_medians_and_total_count():
+def test_collect_lane_signals_uses_mean_favorites_and_median_price():
+    """Regression: favorites are heavy-tailed (mostly zero, occasional viral
+    listing), so the demand signal must be the mean, not the median — a
+    real 5-listing sample was [0, 0, 34, 1475, 470], whose median (34)
+    erases almost all of the signal the mean (395.8) preserves. Price is
+    tightly clustered, so it stays a median (robust to a single outlier)."""
+
     def fake_fetch(url, headers):
         return {
             "count": 500,
             "results": [
-                _listing(10, 1000, "a"),
-                _listing(20, 2000, "b"),
-                _listing(30, 3000, "c"),
+                _listing(0, 1000, "a"),
+                _listing(0, 2000, "b"),
+                _listing(34, 3000, "c"),
+                _listing(1475, 1500, "d"),
+                _listing(470, 2500, "e"),
             ],
         }
 
@@ -26,13 +36,13 @@ def test_collect_lane_signals_uses_medians_and_total_count():
     client = EtsyPublicClient("k:s", fetch=fake_fetch, min_interval=0)
     lane = Lane(id="x", keywords=["kw"], credibility=0.9, brand_fit="careeros")
 
-    sig = collect_lane_signals(client, lane, limit=3)
+    sig = collect_lane_signals(client, lane, limit=5)
 
     assert sig.active_listings == 500
-    assert sig.median_favorites == 20
+    assert sig.mean_favorites == pytest.approx(395.8)
     assert sig.median_price == 20.0
-    assert sig.sample_size == 3
-    assert sig.sample_titles == ["a", "b", "c"]
+    assert sig.sample_size == 5
+    assert sig.sample_titles == ["a", "b", "c", "d", "e"]
 
 
 def test_collect_lane_signals_handles_empty_results():
@@ -47,7 +57,7 @@ def test_collect_lane_signals_handles_empty_results():
     sig = collect_lane_signals(client, lane, limit=5)
 
     assert sig.active_listings == 0
-    assert sig.median_favorites == 0.0
+    assert sig.mean_favorites == 0.0
     assert sig.median_price == 0.0
     assert sig.sample_size == 0
 
@@ -69,7 +79,7 @@ def test_snapshot_and_diagnose():
     from radar.etsy_api import EtsyPublicClient
 
     client = EtsyPublicClient("k:s", fetch=fake_fetch, min_interval=0)
-    snaps = snapshot_own_listings(client, "YOUR_ETSY_SHOP_ID")
+    snaps = snapshot_own_listings(client, "12345678")
 
     assert snaps[0].views == 6
     assert snaps[0].price_usd == 19.0

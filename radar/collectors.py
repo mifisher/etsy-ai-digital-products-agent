@@ -32,7 +32,7 @@ def collect_lane_signals(
         lane_id=lane.id,
         keyword=keyword,
         active_listings=data.get("count", 0) or 0,
-        median_favorites=statistics.median(favorites) if favorites else 0.0,
+        mean_favorites=statistics.fmean(favorites) if favorites else 0.0,
         median_price=statistics.median(prices) if prices else 0.0,
         sample_titles=[r.get("title", "") for r in results],
         sample_size=len(results),
